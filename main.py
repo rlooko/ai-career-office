@@ -6,17 +6,62 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 DB = ROOT / 'data' / 'office.db'
-MODEL = 'qwen3:4b'
-
+MODEL = 'qwen2.5:3b'
 
 def ask_ai(system, user):
-    payload = json.dumps({'model': MODEL, 'stream': False, 'think': False,
-                          'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]}, ensure_ascii=False).encode()
-    request = urllib.request.Request('http://localhost:11434/api/chat', data=payload,
-                                     headers={'Content-Type': 'application/json'})
-    with urllib.request.urlopen(request, timeout=300) as response:
-        return json.load(response)['message']['content']
+    import time
 
+    payload = json.dumps({
+        'model': MODEL,
+        'stream': False,
+        'think': False,
+        'keep_alive': '5m',
+        'options': {
+            'num_predict': 300,
+            'temperature': 0.2
+        },
+        'messages': [
+            {
+                'role': 'system',
+                'content': system + (
+                    '\n최종 답변만 작성하라. '
+                    '영어 사고 과정이나 내부 추론을 출력하지 마라.'
+                )
+            },
+            {
+                'role': 'user',
+                'content': user
+            }
+        ]
+    }, ensure_ascii=False).encode('utf-8')
+
+    request = urllib.request.Request(
+        'http://127.0.0.1:11434/api/chat',
+        data=payload,
+        headers={'Content-Type': 'application/json'}
+    )
+
+    print('\n[AI] 응답 생성 중...', flush=True)
+    start = time.monotonic()
+
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            result = json.load(response)
+
+        elapsed = time.monotonic() - start
+        print(f'[AI] 응답 완료: {elapsed:.1f}초', flush=True)
+
+        content = result['message']['content'].strip()
+
+        if not content:
+            raise ValueError('AI가 빈 응답을 반환했습니다.')
+
+        return content
+
+    except Exception as error:
+        elapsed = time.monotonic() - start
+        print(f'[AI] 요청 실패: {elapsed:.1f}초', flush=True)
+        raise
 
 def init_db():
     DB.parent.mkdir(parents=True, exist_ok=True)
