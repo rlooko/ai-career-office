@@ -210,6 +210,103 @@ def allocate_study_minutes(data):
     return validate_study_plan({'tasks': allocated})
 
 
+
+def validate_manager_report(data):
+    """총괄 비서 JSON 응답의 구조를 검증한다."""
+    if not isinstance(data, dict):
+        raise ValueError("총괄 비서 응답은 JSON 객체여야 합니다.")
+
+    priorities = data.get("priorities")
+    career_task = data.get("career_task")
+    needs_confirmation = data.get("needs_confirmation")
+
+    if not isinstance(priorities, list) or len(priorities) != 3:
+        raise ValueError("우선순위는 정확히 3개여야 합니다.")
+
+    if any(
+        not isinstance(item, str) or not item.strip()
+        for item in priorities
+    ):
+        raise ValueError("우선순위에 빈 항목이 있습니다.")
+
+    if not isinstance(career_task, str) or not career_task.strip():
+        raise ValueError("취업 준비 과제가 비어 있습니다.")
+
+    if not isinstance(needs_confirmation, str):
+        raise ValueError("사용자 확인 사항은 문자열이어야 합니다.")
+
+    return {
+        "priorities": [item.strip() for item in priorities],
+        "career_task": career_task.strip(),
+        "needs_confirmation": needs_confirmation.strip() or "없음"
+    }
+
+
+def format_manager_report(data):
+    """검증된 총괄 비서 데이터를 Markdown으로 변환한다."""
+    lines = ["오늘의 우선순위:"]
+
+    for index, priority in enumerate(data["priorities"], 1):
+        lines.append(f"{index}. {priority}")
+
+    lines.extend([
+        "",
+        "취업 준비 과제:",
+        f"- {data['career_task']}",
+        "",
+        "사용자 확인 필요 사항:",
+        f"- {data['needs_confirmation']}"
+    ])
+
+    return "\n".join(lines)
+
+
+def generate_manager_report(profile, tasks, study_tasks):
+    """총괄 비서 보고서를 생성하고 검증한다."""
+    fallback = {
+        "priorities": [
+            "오늘의 SQL 학습 과제 완료",
+            "오늘의 Python 학습 과제 완료",
+            "데이터 분석가 취업 준비 진행"
+        ],
+        "career_task": (
+            "Junior Data Analyst 채용공고 3개의 "
+            "필수 기술을 표로 정리"
+        ),
+        "needs_confirmation": "오늘 실제 일정 확인"
+    }
+
+    system = (
+        "너는 데이터 분석가 취업 준비를 돕는 총괄 비서다. "
+        "반드시 JSON 객체만 반환하라. "
+        "priorities는 구체적인 행동 3개로 작성하라. "
+        "career_task는 오늘 완료할 취업 준비 과제 1개다. "
+        "needs_confirmation은 사용자에게 확인할 사항이다. "
+        "별도의 시간표를 생성하지 마라. "
+        "JSON 키는 priorities, career_task, needs_confirmation이다."
+    )
+
+    user = (
+        f"프로필: {json.dumps(profile, ensure_ascii=False)}\n"
+        f"최근 작업: {tasks}\n"
+        f"오늘 학습 과제: "
+        f"{json.dumps(study_tasks, ensure_ascii=False)}"
+    )
+
+    for attempt in range(2):
+        try:
+            data = ask_ai_json(system, user)
+            validated = validate_manager_report(data)
+            print(f"[총괄 비서 검증] {attempt + 1}회차 통과")
+            return format_manager_report(validated)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            print(f"[총괄 비서 검증] 실패: {error}")
+            user += f"\n이전 응답 오류: {error}. 수정해서 다시 생성하라."
+
+    print("[총괄 비서 검증] 기본 보고서로 대체합니다.")
+    return format_manager_report(validate_manager_report(fallback))
+
+
 def generate_study_plan(profile, tasks):
     """AI 계획을 최대 두 번 검증하고, 실패하면 기본 계획을 사용한다."""
     fallback = {
@@ -309,9 +406,10 @@ def briefing():
     study = format_study_plan(study_tasks)
     study += f'\n\n계획 출처: {study_source}\n'
 
-    manager = ask_ai(
-        '너는 AI 회사의 총괄 비서다. 한국어로 답하라. 학습 코치의 보고서를 검토해 오늘의 우선순위와 취업 준비 과제를 제안하라. 시간표는 작성하지 마라. 캘린더가 연동되지 않았으므로 모든 일정은 가정이라고 명시하라. 실제 채용공고를 조회하지 않았으므로 회사명이나 채용 마감일을 만들어내지 마라. 외부 게시, 지원서 제출, 캘린더 변경을 실행했다고 주장하지 마라. 공부 시간은 120분이며 방송과 겹치지 않아야 한다.',
-        f'오늘 날짜: {datetime.now():%Y-%m-%d}\n기본 일정: {schedule}\n프로필: {json.dumps(profile, ensure_ascii=False)}\n최근 작업: {tasks}\n학습 코치 보고:\n{study}\n시간표나 시각을 작성하지 마라. 기본 시간표는 Python이 별도로 출력한다. 학습 코치의 과제를 중복 배정하지 마라. 다음 세 항목만 작성하라: 오늘의 우선순위 3개, 취업 준비 과제 1개, 사용자 확인 필요 사항.')
+    manager = generate_manager_report(
+        profile, tasks, study_tasks
+    )
+
     fixed_schedule = (
         '# 기본 시간표 (캘린더 미연동, 요일별 조정 필요)\n\n'
         '| 시간 | 활동 |\n'
