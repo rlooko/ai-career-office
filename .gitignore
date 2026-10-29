@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Personal data
+data/private/
+data/profile.json
+private/
+resumes/
+applications/
+blog_drafts/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated outputs
+reports/
+logs/
